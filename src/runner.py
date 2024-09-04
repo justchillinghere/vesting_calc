@@ -74,7 +74,7 @@ def run_cc_simulation(cc_params: CCParameters):
         deal_rewards = calculate_deal_vesting(cc_params)
     else:
         print(
-            "No active Deal or Deal hasn't started yet. No Deal rewards to calculate."
+            "\033[91mNo active Deal is set or Deal hasn't started yet. No Deal rewards to calculate.\033[0m"
         )
         deal_rewards = {
             "total_earned_usd": 0,
@@ -91,10 +91,14 @@ def run_cc_simulation(cc_params: CCParameters):
     print(f"CC Rewards in Vesting: {cc_rewards['in_vesting']:.4f}")
     print(f"CC Provider Rewards: {cc_rewards['provider_rewards']:.4f}")
     print(f"CC Staker Rewards: {cc_rewards['staker_rewards']:.4f}")
-    print(f"Deal Rewards Earned (USD): ${deal_rewards['total_earned_usd']:.4f}")
-    print(f"Deal Rewards Earned (FLT): {deal_rewards['total_earned_flt']:.4f}")
-    print(f"Deal Rewards Unlocked (FLT): {deal_rewards['unlocked_flt']:.4f}")
-    print(f"Deal Rewards in Vesting (FLT): {deal_rewards['in_vesting_flt']:.4f}")
+
+    if (
+        dp.amount_of_cu_to_move_to_deal > 0 and dp.deal_start_epoch > 0
+    ) and dp.deal_start_epoch <= cc_params.current_epoch:
+        print(f"Deal Rewards Earned (USD): ${deal_rewards['total_earned_usd']:.4f}")
+        print(f"Deal Rewards Earned (FLT): {deal_rewards['total_earned_flt']:.4f}")
+        print(f"Deal Rewards Unlocked (FLT): {deal_rewards['unlocked_flt']:.4f}")
+        print(f"Deal Rewards in Vesting (FLT): {deal_rewards['in_vesting_flt']:.4f}")
     print("=" * 100)
 
     return {"cc_rewards": cc_rewards, "deal_rewards": deal_rewards}
