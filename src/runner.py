@@ -101,24 +101,25 @@ def run_cc_simulation(cc_params: CCParameters):
     return {"cc_rewards": cc_rewards, "deal_rewards": deal_rewards}
 
 
-cc_params = CCParameters(
-    vesting_params=VestingParameters(
-        vesting_period_count=5, vesting_period_duration=10, reward_per_epoch=1.0
-    ),
-    creation_params=CCCreationParameters(
-        cu_amount=4, cc_start_epoch=5, cc_end_epoch=50, staking_rate=50
-    ),
-    failing_params=CCFailingParams(
-        cc_fail_epoch=None, slashed_epochs={1: [12], 2: [9]}
-    ),
-    deal_params=CCDealParameters(
-        deal_start_epoch=20,
-        deal_end_epoch=40,
-        amount_of_cu_to_move_to_deal=2,
-        price_per_cu_in_offer_usd=10,
-        flt_price=1,
-    ),
-    current_epoch=44,
-)
+if __name__ == "__main__":
+    cc_params = CCParameters(
+        vesting_params=VestingParameters(
+            vesting_period_count=5, vesting_period_duration=10, reward_per_epoch=1.0
+        ),
+        creation_params=CCCreationParameters(
+            cu_amount=4, cc_start_epoch=5, cc_end_epoch=50, staking_rate=50
+        ),
+        failing_params=CCFailingParams(
+            cc_fail_epoch=None, slashed_epochs={1: [12], 2: [9]}
+        ),
+        deal_params=CCDealParameters(
+            deal_start_epoch=20,
+            deal_end_epoch=40,
+            amount_of_cu_to_move_to_deal=2,
+            price_per_cu_in_offer_usd=10,
+            flt_price=1,
+        ),
+        current_epoch=44,
+    )
 
-simulation_results = run_cc_simulation(cc_params)
+    simulation_results = run_cc_simulation(cc_params)
