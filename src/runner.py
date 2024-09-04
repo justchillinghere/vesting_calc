@@ -69,9 +69,8 @@ def run_cc_simulation(cc_params: CCParameters):
     # 3. Run Deal vesting rewards calculation
     print("\nCalculating Deal Vesting Rewards:")
     if (
-        dp.amount_of_cu_to_move_to_deal > 0
-        and dp.deal_start_epoch <= cc_params.current_epoch
-    ):
+        dp.amount_of_cu_to_move_to_deal > 0 and dp.deal_start_epoch > 0
+    ) and dp.deal_start_epoch <= cc_params.current_epoch:
         deal_rewards = calculate_deal_vesting(cc_params)
     else:
         print(

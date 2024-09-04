@@ -39,17 +39,35 @@ class CCFailingParams(BaseModel):
 
 
 class CCDealParameters(BaseModel):
-    deal_start_epoch: int = Field(default=0, gt=0)
-    deal_end_epoch: int = Field(default=0, gt=0)
-    amount_of_cu_to_move_to_deal: int = Field(default=0, ge=1)
+    deal_start_epoch: int = Field(default=0, ge=0)
+    deal_end_epoch: int = Field(default=0, ge=0)
+    amount_of_cu_to_move_to_deal: int = Field(default=0, ge=0)
     price_per_cu_in_offer_usd: float = Field(default=1.0, gt=0)
     flt_price: float = Field(default=1.0, gt=0)
 
     @field_validator("deal_end_epoch")
     @classmethod
     def end_after_start(cls, v: int, info: pydantic.ValidationInfo) -> int:
-        if "deal_start_epoch" in info.data and v <= info.data["deal_start_epoch"]:
-            raise ValueError("deal_end_epoch must be greater than deal_start_epoch")
+        if "deal_start_epoch" in info.data:
+            start = info.data["deal_start_epoch"]
+            if start == 0 and v != 0:
+                raise ValueError(
+                    "If deal_start_epoch is 0, deal_end_epoch must also be 0"
+                )
+            if start != 0 and v <= start:
+                raise ValueError(
+                    "deal_end_epoch must be greater than deal_start_epoch when deal_start_epoch is not 0"
+                )
+        return v
+
+    @field_validator("amount_of_cu_to_move_to_deal")
+    @classmethod
+    def validate_cu_amount(cls, v: int, info: pydantic.ValidationInfo) -> int:
+        if "deal_start_epoch" in info.data and info.data["deal_start_epoch"] == 0:
+            if v != 0:
+                raise ValueError(
+                    "amount_of_cu_to_move_to_deal must be 0 when there's no deal (deal_start_epoch is 0)"
+                )
         return v
 
 
