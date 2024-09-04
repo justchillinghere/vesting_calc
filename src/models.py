@@ -63,10 +63,10 @@ class CCDealParameters(BaseModel):
     @field_validator("amount_of_cu_to_move_to_deal")
     @classmethod
     def validate_cu_amount(cls, v: int, info: pydantic.ValidationInfo) -> int:
-        if "deal_start_epoch" in info.data and info.data["deal_start_epoch"] == 0:
-            if v != 0:
+        if v != 0:
+            if "deal_start_epoch" in info.data and info.data["deal_start_epoch"] != 0:
                 raise ValueError(
-                    "amount_of_cu_to_move_to_deal must be 0 when there's no deal (deal_start_epoch is 0)"
+                    "amount_of_cu_to_move_to_deal can be 0 when there's no deal (deal_start_epoch is 0)"
                 )
         return v
 
