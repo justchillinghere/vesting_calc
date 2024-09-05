@@ -1,37 +1,54 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Dict, List, Optional
 import pydantic
+from utils import round_to_precision, group_consecutive_epochs
 
-from rewards_calculators import calculate_vesting, calculate_deal_vesting
+from rewards_calculators import (
+    calculate_vesting,
+    calculate_deal_vesting,
+    calculate_expected_apr,
+)
 from models import (
-    CCParameters,
+    TestScenarioParameters,
     VestingParameters,
     CCCreationParameters,
     CCFailingParams,
     CCDealParameters,
+    NetworkParameters,
 )
 
 
-def run_cc_simulation(cc_params: CCParameters):
+def run_cc_simulation(test_scenario_params: TestScenarioParameters):
     print("\033[92m" + "=" * 100 + "\033[0m")
     print("\033[92mCapacity Commitment (CC) Simulation Scenario\033[0m")
     print("\033[92m" + "=" * 100 + "\033[0m")
 
     # 1. Log initial scenario information
-    cp = cc_params.creation_params
-    fp = cc_params.failing_params
-    dp = cc_params.deal_params
+    cp = test_scenario_params.creation_params
+    fp = test_scenario_params.failing_params
+    dp = test_scenario_params.deal_params
+    np = test_scenario_params.network_params
+
+    print("\033[93mNetwork Parameters:\033[0m")
+    print(f"- Epoch Duration: {np.epoch_duration} seconds")
+    print(f"- USD Collateral per Unit: ${np.usd_collateral_per_unit}")
+    print(f"- USD Target Revenue per Epoch: ${np.usd_target_revenue_per_epoch}")
+    print(f"- FLT Price, USD: ${np.flt_usd_price}")
 
     print("\033[93mCC created with the following parameters:\033[0m")
     print(f"- Start Epoch: {cp.cc_start_epoch}")
     print(f"- End Epoch: {cp.cc_end_epoch}")
     print(f"- Total CUs: {cp.cu_amount}")
     print(f"- Staking Rate: {cp.staking_rate}%")
-    print(f"- Reward per Epoch: {cc_params.vesting_params.reward_per_epoch}")
-    print(f"- Vesting Period Count: {cc_params.vesting_params.vesting_period_count}")
+
     print(
-        f"- Vesting Period Duration: {cc_params.vesting_params.vesting_period_duration}"
+        f"- Vesting Period Count: {test_scenario_params.vesting_params.vesting_period_count}"
     )
+    print(
+        f"- Vesting Period Duration: {test_scenario_params.vesting_params.vesting_period_duration}"
+    )
+
+    calculate_expected_apr(test_scenario_params)
 
     if fp.cc_fail_epoch:
         print(f"\033[91m\nCC will fail in Epoch {fp.cc_fail_epoch}\033[0m")
@@ -47,13 +64,11 @@ def run_cc_simulation(cc_params: CCParameters):
         print(f"- Deal End Epoch: {dp.deal_end_epoch}")
         print(f"- CUs in Deal: {dp.amount_of_cu_to_move_to_deal}")
         print(f"- Price per CU in Deal (USD): ${dp.price_per_cu_in_offer_usd}")
-        print(f"- FLT Price: ${dp.flt_price}")
 
-    print(f"\033[93m\nCurrent Epoch: {cc_params.current_epoch}\033[0m")
-    print("=" * 100)
+    print(f"\033[93m\nCurrent Epoch: {test_scenario_params.current_epoch}\033[0m")
 
     # 2. Run CC rewards calculation
-    if fp.cc_fail_epoch and fp.cc_fail_epoch <= cc_params.current_epoch:
+    if fp.cc_fail_epoch and fp.cc_fail_epoch <= test_scenario_params.current_epoch:
         print("\nCalculating CC Rewards:")
         print("CC has failed. No rewards will be earned.")
         cc_rewards = {
@@ -64,14 +79,14 @@ def run_cc_simulation(cc_params: CCParameters):
             "staker_rewards": 0,
         }
     else:
-        cc_rewards = calculate_vesting(cc_params)
+        cc_rewards = calculate_vesting(test_scenario_params)
 
     # 3. Run Deal vesting rewards calculation
     print("\nCalculating Deal Vesting Rewards:")
     if (
         dp.amount_of_cu_to_move_to_deal > 0 and dp.deal_start_epoch > 0
-    ) and dp.deal_start_epoch <= cc_params.current_epoch:
-        deal_rewards = calculate_deal_vesting(cc_params)
+    ) and dp.deal_start_epoch <= test_scenario_params.current_epoch:
+        deal_rewards = calculate_deal_vesting(test_scenario_params)
     else:
         print(
             "\033[91mNo active Deal is set or Deal hasn't started yet. No Deal rewards to calculate.\033[0m"
@@ -94,7 +109,7 @@ def run_cc_simulation(cc_params: CCParameters):
 
     if (
         dp.amount_of_cu_to_move_to_deal > 0 and dp.deal_start_epoch > 0
-    ) and dp.deal_start_epoch <= cc_params.current_epoch:
+    ) and dp.deal_start_epoch <= test_scenario_params.current_epoch:
         print(f"Deal Rewards Earned (USD): ${deal_rewards['total_earned_usd']:.4f}")
         print(f"Deal Rewards Earned (FLT): {deal_rewards['total_earned_flt']:.4f}")
         print(f"Deal Rewards Unlocked (FLT): {deal_rewards['unlocked_flt']:.4f}")
@@ -105,24 +120,34 @@ def run_cc_simulation(cc_params: CCParameters):
 
 
 if __name__ == "__main__":
-    cc_params = CCParameters(
-        vesting_params=VestingParameters(
-            vesting_period_count=5, vesting_period_duration=10, reward_per_epoch=1.0
-        ),
-        creation_params=CCCreationParameters(
-            cu_amount=4, cc_start_epoch=5, cc_end_epoch=50, staking_rate=50
-        ),
-        failing_params=CCFailingParams(
-            cc_fail_epoch=None, slashed_epochs={1: [12], 2: [9]}
-        ),
-        deal_params=CCDealParameters(
-            deal_start_epoch=20,
-            deal_end_epoch=40,
-            amount_of_cu_to_move_to_deal=2,
-            price_per_cu_in_offer_usd=10,
-            flt_price=1,
-        ),
+    network_params = NetworkParameters(
+        epoch_duration=86400,
+        usd_collateral_per_unit=1,
+        usd_target_revenue_per_epoch=1,
+        flt_usd_price=1,
+    )
+    vesting_params = VestingParameters(
+        vesting_period_count=5,
+        vesting_period_duration=10,
+    )
+    creation_params = CCCreationParameters(
+        cu_amount=1, cc_start_epoch=5, cc_end_epoch=50, staking_rate=100
+    )
+    failing_params = CCFailingParams(cc_fail_epoch=None, slashed_epochs={})
+    deal_params = CCDealParameters(
+        deal_start_epoch=20,
+        deal_end_epoch=30,
+        amount_of_cu_to_move_to_deal=1,
+        price_per_cu_in_offer_usd=1,
+    )
+
+    test_scenario_params = TestScenarioParameters(
+        network_params=network_params,
+        vesting_params=vesting_params,
+        creation_params=creation_params,
+        failing_params=failing_params,
+        deal_params=deal_params,
         current_epoch=44,
     )
 
-    simulation_results = run_cc_simulation(cc_params)
+    simulation_results = run_cc_simulation(test_scenario_params)

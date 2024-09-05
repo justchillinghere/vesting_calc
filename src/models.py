@@ -3,10 +3,18 @@ from typing import Dict, List, Optional
 import pydantic
 
 
+class NetworkParameters(BaseModel):
+    epoch_duration: int = Field(default=600, ge=1)  # in seconds
+    usd_collateral_per_unit: float = Field(default=1.0, gt=0)
+    usd_target_revenue_per_epoch: float = Field(default=1000.0, gt=0)
+    # min_cc_duration: int = Field(default=1, ge=1)  # in epochs
+    flt_usd_price: float = Field(default=1.0, gt=0)  # in USD
+
+
 class VestingParameters(BaseModel):
     vesting_period_count: int = Field(default=2, ge=1)
     vesting_period_duration: int = Field(default=6, ge=1)
-    reward_per_epoch: int = Field(default=1, gt=0)
+    # reward_per_epoch: int = Field(default=1, gt=0)
 
 
 class CCCreationParameters(BaseModel):
@@ -43,17 +51,12 @@ class CCDealParameters(BaseModel):
     deal_end_epoch: int = Field(default=0, ge=0)
     amount_of_cu_to_move_to_deal: int = Field(default=0, ge=0)
     price_per_cu_in_offer_usd: float = Field(default=1.0, gt=0)
-    flt_price: float = Field(default=1.0, gt=0)
 
     @field_validator("deal_end_epoch")
     @classmethod
     def end_after_start(cls, v: int, info: pydantic.ValidationInfo) -> int:
         if "deal_start_epoch" in info.data:
             start = info.data["deal_start_epoch"]
-            if start == 0 and v != 0:
-                raise ValueError(
-                    "If deal_start_epoch is 0, deal_end_epoch must also be 0"
-                )
             if start != 0 and v <= start:
                 raise ValueError(
                     "deal_end_epoch must be greater than deal_start_epoch when deal_start_epoch is not 0"
@@ -63,7 +66,7 @@ class CCDealParameters(BaseModel):
     @field_validator("amount_of_cu_to_move_to_deal")
     @classmethod
     def validate_cu_amount(cls, v: int, info: pydantic.ValidationInfo) -> int:
-        if v != 0:
+        if v == 0:
             if "deal_start_epoch" in info.data and info.data["deal_start_epoch"] != 0:
                 raise ValueError(
                     "amount_of_cu_to_move_to_deal can be 0 when there's no deal (deal_start_epoch is 0)"
@@ -71,28 +74,30 @@ class CCDealParameters(BaseModel):
         return v
 
 
-class CCParameters(BaseModel):
+class TestScenarioParameters(BaseModel):
+    network_params: NetworkParameters = Field(default_factory=NetworkParameters)
     vesting_params: VestingParameters = Field(default_factory=VestingParameters)
     creation_params: CCCreationParameters = Field(default_factory=CCCreationParameters)
     failing_params: CCFailingParams = Field(default_factory=CCFailingParams)
     deal_params: CCDealParameters = Field(default_factory=CCDealParameters)
+    precision: int = Field(default=10**7, ge=0)
     current_epoch: int = Field(default=1, ge=1)
 
     @model_validator(mode="after")
-    def validate_all(self) -> "CCParameters":
+    def validate_all(cls, values):
         if (
-            self.deal_params.amount_of_cu_to_move_to_deal
-            > self.creation_params.cu_amount
+            values.deal_params.amount_of_cu_to_move_to_deal
+            > values.creation_params.cu_amount
         ):
             raise ValueError(
                 "amount_of_cu_to_move_to_deal cannot exceed total cu_amount"
             )
 
-        deal_start = self.deal_params.deal_start_epoch
-        deal_end = self.deal_params.deal_end_epoch
-        cu_in_deal = self.deal_params.amount_of_cu_to_move_to_deal
+        deal_start = values.deal_params.deal_start_epoch
+        deal_end = values.deal_params.deal_end_epoch
+        cu_in_deal = values.deal_params.amount_of_cu_to_move_to_deal
 
-        for cu, epochs in self.failing_params.slashed_epochs.items():
+        for cu, epochs in values.failing_params.slashed_epochs.items():
             if cu <= cu_in_deal:
                 for epoch in epochs:
                     if deal_start <= epoch <= deal_end:
@@ -100,10 +105,16 @@ class CCParameters(BaseModel):
                             f"CU {cu} cannot be slashed in epoch {epoch} while in a deal"
                         )
 
-        if self.failing_params.cc_fail_epoch is not None:
-            if self.failing_params.cc_fail_epoch > self.creation_params.cc_end_epoch:
+        if values.failing_params.cc_fail_epoch is not None:
+            if (
+                values.failing_params.cc_fail_epoch
+                > values.creation_params.cc_end_epoch
+            ):
                 raise ValueError("cc_fail_epoch cannot be after cc_end_epoch")
-            if self.failing_params.cc_fail_epoch < self.creation_params.cc_start_epoch:
+            if (
+                values.failing_params.cc_fail_epoch
+                < values.creation_params.cc_start_epoch
+            ):
                 raise ValueError("cc_fail_epoch cannot be before cc_start_epoch")
 
-        return self
+        return values
