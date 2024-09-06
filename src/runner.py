@@ -7,6 +7,7 @@ from rewards_calculators import (
     calculate_vesting,
     calculate_deal_vesting,
     calculate_expected_apr,
+    calculate_average_apr,
 )
 from models import (
     TestScenarioParameters,
@@ -89,6 +90,10 @@ def run_cc_simulation(test_scenario_params: TestScenarioParameters):
             "in_vesting_flt": 0,
         }
 
+    total_earned_flt = cc_rewards["total_earned"] + deal_rewards["total_earned_flt"]
+
+    calculate_average_apr(total_earned_flt, test_scenario_params)
+
     # 4. Print summary
     print("\n" + "=" * 100)
     print("\033[93mSimulation Summary:\033[0m")
@@ -122,12 +127,14 @@ if __name__ == "__main__":
         vesting_period_duration=10,
     )
     creation_params = CCCreationParameters(
-        cu_amount=32, cc_start_epoch=5, cc_end_epoch=50, staking_rate=100
+        cu_amount=1, cc_start_epoch=5, cc_end_epoch=50, staking_rate=100
     )
-    failing_params = CCFailingParams(cc_fail_epoch=0, slashed_epochs={})
+    failing_params = CCFailingParams(
+        cc_fail_epoch=0, slashed_epochs={1: [10, 11, 12, 13, 14, 15]}
+    )
 
     deal_params = CCDealParameters(
-        deal_start_epoch=20,  # 0 means no deal
+        deal_start_epoch=0,  # 0 means no deal
         deal_end_epoch=30,
         amount_of_cu_to_move_to_deal=1,
         price_per_cu_in_offer_usd=1,

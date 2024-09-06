@@ -100,7 +100,9 @@ class TestScenarioParameters(BaseModel):
         for cu, epochs in values.failing_params.slashed_epochs.items():
             if cu <= cu_in_deal:
                 for epoch in epochs:
-                    if deal_start <= epoch <= deal_end:
+                    if (deal_start <= epoch <= deal_end) and (
+                        deal_start != 0 and deal_end != 0 and cu_in_deal != 0
+                    ):
                         raise ValueError(
                             f"CU {cu} cannot be slashed in epoch {epoch} while in a deal"
                         )

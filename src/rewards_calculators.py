@@ -30,17 +30,60 @@ def calculate_expected_apr(test_scenario_params: TestScenarioParameters):
     print(f"FLT Collateral: {round_to_precision(collateral_flt, precision)}")
     print(f"Year revenue in FLT: {round_to_precision(year_revenue_flt, precision)}")
 
-    print(f"Total expected APR: {expected_apr / precision:.4f} %")
-    print(f"Provider Expected APR: {provider_expected_apr / precision:.4f} %")
+    print(f"Total expected APR: {round_to_precision(expected_apr)} %")
+    print(f"Provider Expected APR: {round_to_precision(provider_expected_apr)} %")
     if cp.staking_rate > 0:
-        print(f"Staker Expected APR: {staker_expected_apr / precision:.4f} %")
+        print(f"Staker Expected APR: {round_to_precision(staker_expected_apr)} %")
     print("=" * 80)
 
-    return {
-        "total_expected_apr": expected_apr / precision,
-        "provider_expected_apr": provider_expected_apr / precision,
-        "staker_expected_apr": staker_expected_apr / precision,
-    }
+    return
+
+
+def calculate_average_apr(
+    total_reward: int, test_scenario_params: TestScenarioParameters
+):
+    cp = test_scenario_params.creation_params
+    fp = test_scenario_params.failing_params
+    np = test_scenario_params.network_params
+    precision = test_scenario_params.precision  # 10**7 by default
+
+    last_epoch_to_count_rewards = min(
+        cp.cc_end_epoch,
+        test_scenario_params.current_epoch,
+    )
+    if fp.cc_fail_epoch > 0:
+        last_epoch_to_count_rewards = min(last_epoch_to_count_rewards, fp.cc_fail_epoch)
+
+    total_epochs_rewarded = last_epoch_to_count_rewards - cp.cc_start_epoch
+
+    collateral_flt = (
+        cp.cu_amount * np.usd_collateral_per_unit * precision
+    ) // np.flt_usd_price
+
+    seconds_in_year = 365 * 24 * 60 * 60
+    epochs_in_year = seconds_in_year // np.epoch_duration
+
+    avg_reward = (total_reward * precision) // total_epochs_rewarded
+    avg_reward_yearly = avg_reward * epochs_in_year
+    avg_apr = (avg_reward_yearly * precision) // collateral_flt
+    provider_avg_apr = (avg_apr * (100 - cp.staking_rate)) // 100
+    staker_avg_apr = (avg_apr * cp.staking_rate) // 100
+
+    print("=" * 80)
+    print("\033[95m" + f"Average APR Calculation" + "\033[0m")
+    print("=" * 80)
+    print(f"Total Reward: {total_reward}")
+    print(f"Total epochs rewarded: {total_epochs_rewarded}")
+    print(f"FLT Collateral: {round_to_precision(collateral_flt)}")
+    print(f"Avg Reward per epoch: {round_to_precision(avg_reward)}")
+    print(f"Avg Reward per year: {round_to_precision(avg_reward_yearly)}")
+    print(f"Avg APR: {round_to_precision(avg_apr)} %")
+    print(f"Provider Avg APR: {round_to_precision(provider_avg_apr)} %")
+    if cp.staking_rate > 0:
+        print(f"Staker Avg APR: {round_to_precision(staker_avg_apr)} %")
+    print("=" * 80)
+
+    return
 
 
 def calculate_period_rewards_for_cc(
@@ -100,9 +143,23 @@ def calculate_vesting(test_scenario_params: TestScenarioParameters):
     last_epoch_to_count_rewards = min(
         cp.cc_end_epoch, test_scenario_params.current_epoch
     )
-    if fp.cc_fail_epoch:
+    if fp.cc_fail_epoch > 0:
         last_epoch_to_count_rewards = min(last_epoch_to_count_rewards, fp.cc_fail_epoch)
-        print(f"CC Failed in epoch {fp.cc_fail_epoch}, rewards added until then.")
+
+    print(
+        f"Rewards calculated from first active epoch {cp.cc_start_epoch} to the",
+        end=" ",
+    )
+    if last_epoch_to_count_rewards == cp.cc_end_epoch:
+        print(f"expiration epoch {cp.cc_end_epoch}")
+    elif last_epoch_to_count_rewards == fp.cc_fail_epoch:
+        print(f"efailure in epoch {fp.cc_fail_epoch}")
+    elif last_epoch_to_count_rewards == test_scenario_params.current_epoch:
+        print(f"current epoch {test_scenario_params.current_epoch}")
+
+    print(
+        f"Amount of epoch considered: {last_epoch_to_count_rewards - cp.cc_start_epoch} epochs"
+    )
 
     # print(f"CC Start Epoch: {cp.cc_start_epoch}")
     # print(f"CC End Epoch: {cp.cc_end_epoch}")
