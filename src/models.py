@@ -32,7 +32,7 @@ class CCCreationParameters(BaseModel):
 
 
 class CCFailingParams(BaseModel):
-    cc_fail_epoch: Optional[int] = Field(default=None, ge=1)
+    cc_fail_epoch: int = Field(default=0, ge=0)
     slashed_epochs: Dict[int, List[int]] = Field(default_factory=dict)
 
     @field_validator("slashed_epochs")
@@ -105,7 +105,7 @@ class TestScenarioParameters(BaseModel):
                             f"CU {cu} cannot be slashed in epoch {epoch} while in a deal"
                         )
 
-        if values.failing_params.cc_fail_epoch is not None:
+        if values.failing_params.cc_fail_epoch != 0:
             if (
                 values.failing_params.cc_fail_epoch
                 > values.creation_params.cc_end_epoch

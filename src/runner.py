@@ -67,25 +67,16 @@ def run_cc_simulation(test_scenario_params: TestScenarioParameters):
 
     print(f"\033[93m\nCurrent Epoch: {test_scenario_params.current_epoch}\033[0m")
 
-    # 2. Run CC rewards calculation
-    if fp.cc_fail_epoch and fp.cc_fail_epoch <= test_scenario_params.current_epoch:
-        print("\nCalculating CC Rewards:")
-        print("CC has failed. No rewards will be earned.")
-        cc_rewards = {
-            "total_earned": 0,
-            "unlocked": 0,
-            "in_vesting": 0,
-            "provider_rewards": 0,
-            "staker_rewards": 0,
-        }
-    else:
-        cc_rewards = calculate_vesting(test_scenario_params)
+    cc_rewards = calculate_vesting(test_scenario_params)
 
     # 3. Run Deal vesting rewards calculation
     print("\nCalculating Deal Vesting Rewards:")
     if (
         dp.amount_of_cu_to_move_to_deal > 0 and dp.deal_start_epoch > 0
-    ) and dp.deal_start_epoch <= test_scenario_params.current_epoch:
+    ) and dp.deal_start_epoch >= min(
+        test_scenario_params.current_epoch,
+        test_scenario_params.failing_params.cc_fail_epoch,
+    ):
         deal_rewards = calculate_deal_vesting(test_scenario_params)
     else:
         print(
@@ -131,11 +122,12 @@ if __name__ == "__main__":
         vesting_period_duration=10,
     )
     creation_params = CCCreationParameters(
-        cu_amount=1, cc_start_epoch=5, cc_end_epoch=50, staking_rate=100
+        cu_amount=32, cc_start_epoch=5, cc_end_epoch=50, staking_rate=100
     )
-    failing_params = CCFailingParams(cc_fail_epoch=None, slashed_epochs={})
+    failing_params = CCFailingParams(cc_fail_epoch=0, slashed_epochs={})
+
     deal_params = CCDealParameters(
-        deal_start_epoch=20,
+        deal_start_epoch=20,  # 0 means no deal
         deal_end_epoch=30,
         amount_of_cu_to_move_to_deal=1,
         price_per_cu_in_offer_usd=1,

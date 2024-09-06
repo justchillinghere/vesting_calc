@@ -102,6 +102,7 @@ def calculate_vesting(test_scenario_params: TestScenarioParameters):
     )
     if fp.cc_fail_epoch:
         last_epoch_to_count_rewards = min(last_epoch_to_count_rewards, fp.cc_fail_epoch)
+        print(f"CC Failed in epoch {fp.cc_fail_epoch}, rewards added until then.")
 
     # print(f"CC Start Epoch: {cp.cc_start_epoch}")
     # print(f"CC End Epoch: {cp.cc_end_epoch}")
@@ -294,7 +295,7 @@ def calculate_deal_vesting(test_scenario_params: TestScenarioParameters):
     )
     print("-" * 75)
 
-    for work_epoch in range(dp.deal_start_epoch, last_epoch_to_count_rewards + 1):
+    for work_epoch in range(dp.deal_start_epoch, last_epoch_to_count_rewards):
         period_rewards_usd = reward_per_epoch_usd * dp.amount_of_cu_to_move_to_deal
         period_rewards_flt = (
             period_rewards_usd * (cp.staking_rate * precision / 100) // flt_price
