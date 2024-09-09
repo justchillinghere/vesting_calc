@@ -1,7 +1,11 @@
 from typing import Dict, List, Optional
 
 from models import TestScenarioParameters
-from utils import round_to_precision, group_consecutive_epochs
+from utils import (
+    round_to_precision,
+    group_consecutive_epochs,
+    find_first_withdrawal_epoch_for_the_period,
+)
 
 
 def calculate_expected_apr(test_scenario_params: TestScenarioParameters):
@@ -133,6 +137,7 @@ def calculate_vesting(test_scenario_params: TestScenarioParameters):
     vp = test_scenario_params.vesting_params
     cp = test_scenario_params.creation_params
     fp = test_scenario_params.failing_params
+    withdrawal_epoch = test_scenario_params.withdrawal_epoch
 
     precision = test_scenario_params.precision  # 10**7 by default
 
@@ -161,20 +166,6 @@ def calculate_vesting(test_scenario_params: TestScenarioParameters):
         f"Amount of epoch considered: {last_epoch_to_count_rewards - cp.cc_start_epoch} epochs"
     )
 
-    # print(f"CC Start Epoch: {cp.cc_start_epoch}")
-    # print(f"CC End Epoch: {cp.cc_end_epoch}")
-    # print(f"Last Epoch to Count Rewards: {last_epoch_to_count_rewards}")
-    # print(f"Total CUs: {cp.cu_amount}")
-    # print(f"CUs in Deal: {dp.amount_of_cu_to_move_to_deal}")
-    # print(f"CUs in CC: {cp.cu_amount - dp.amount_of_cu_to_move_to_deal}")
-    # if fp.slashed_epochs:
-    #     print(f"Slashed Epochs per CU: {fp.slashed_epochs}")
-    # if fp.cc_fail_epoch:
-    #     print(f"CC Fail Epoch: {fp.cc_fail_epoch}")
-    # print(f"Reward per Epoch: {vp.reward_per_epoch}")
-    # print(f"Staking Rate: {cp.staking_rate}%")
-    # print("-" * 80)
-
     first_vesting_period_start = cp.cc_start_epoch - (
         cp.cc_start_epoch % vp.vesting_period_duration
     )
@@ -183,6 +174,7 @@ def calculate_vesting(test_scenario_params: TestScenarioParameters):
     )
 
     total_rewards_earned = 0
+    total_withdrawn = 0
     unlocked_rewards = 0
 
     print("Vesting Periods Breakdown:")
@@ -225,11 +217,28 @@ def calculate_vesting(test_scenario_params: TestScenarioParameters):
             // vp.vesting_period_duration
             + 1,
         )
-        unlocked_fraction = min(
+        unlocked_fraction_current = min(
             (periods_since_end * precision) // vp.vesting_period_count, precision
         )
-        period_unlocked_rewards = (period_rewards * unlocked_fraction) // precision
-        unlocked_rewards += period_unlocked_rewards
+
+        period_unlocked_rewards = (
+            period_rewards * unlocked_fraction_current
+        ) // precision
+
+        period_withdrawn = 0
+        if withdrawal_epoch > 0 and withdrawal_epoch >= period_start:
+            periods_since_end_withdrawn = max(
+                0,
+                (withdrawal_epoch - period_end) // vp.vesting_period_duration + 1,
+            )
+            unlocked_fraction_withdrawn = min(
+                (periods_since_end_withdrawn * precision) // vp.vesting_period_count,
+                precision,
+            )
+            period_withdrawn = unlocked_fraction_withdrawn * period_rewards // precision
+
+        total_withdrawn += period_withdrawn
+        unlocked_rewards += period_unlocked_rewards - period_withdrawn
 
         info_str = []
         if slashed_info:
@@ -250,17 +259,21 @@ def calculate_vesting(test_scenario_params: TestScenarioParameters):
         info_str = "; ".join(info_str)
 
         print(
-            "{:<15} {:<15} {:<15} {:<15.2%} {:<15} {:<20}".format(
+            "{:<15} {:<15} {:<15} {:<15.2%} {:<15} {:<15} {:<20}".format(
                 period_start,
                 period_end,
                 round_to_precision(period_rewards),
-                round_to_precision(unlocked_fraction),
+                round_to_precision(unlocked_fraction_current),
                 round_to_precision(period_unlocked_rewards),
+                round_to_precision(period_withdrawn),
                 info_str,
             )
         )
 
-    rewards_in_vesting = max(0, total_rewards_earned - unlocked_rewards)
+    rewards_in_vesting = max(
+        0, total_rewards_earned - unlocked_rewards - total_withdrawn
+    )
+    to_claim = unlocked_rewards
 
     provider_rewards = (total_rewards_earned * (100 - cp.staking_rate) * precision) // (
         100 * precision
@@ -269,23 +282,28 @@ def calculate_vesting(test_scenario_params: TestScenarioParameters):
         100 * precision
     )
 
-    print("-" * 95)
+    print("-" * 110)
     print(
         "\033[95m"
         + f"Results for CC Vesting, epoch {test_scenario_params.current_epoch}"
         + "\033[0m"
     )
     print(f"Total Rewards Earned: {round_to_precision(total_rewards_earned)}")
-    print(f"Unlocked Rewards: {round_to_precision(unlocked_rewards)}")
+    print(f"Total Withdrawn: {round_to_precision(total_withdrawn)}")
+    print(f"Available for Withdrawal: {round_to_precision(to_claim)}")
     print(f"Rewards in Vesting: {round_to_precision(rewards_in_vesting)}")
+    print(
+        f"Check if sum is correct: {round_to_precision(total_withdrawn + to_claim + rewards_in_vesting)}"
+    )
     print(f"Provider Rewards Total: {round_to_precision(provider_rewards)}")
     if cp.staking_rate > 0:
         print(f"Staker Rewards Total: {round_to_precision(staker_rewards)}")
-    print("=" * 80)
+    print("=" * 110)
 
     return {
         "total_earned": round_to_precision(total_rewards_earned),
-        "unlocked": round_to_precision(unlocked_rewards),
+        "total_withdrawn": round_to_precision(total_withdrawn),
+        "to_claim": round_to_precision(to_claim),
         "in_vesting": round_to_precision(rewards_in_vesting),
         "provider_rewards": round_to_precision(provider_rewards),
         "staker_rewards": round_to_precision(staker_rewards),

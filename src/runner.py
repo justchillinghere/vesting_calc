@@ -48,6 +48,7 @@ def run_cc_simulation(test_scenario_params: TestScenarioParameters):
     print(
         f"- Vesting Period Duration: {test_scenario_params.vesting_params.vesting_period_duration}"
     )
+    print(f"Rewards will be withdrawn at epoch {test_scenario_params.withdrawal_epoch}")
 
     calculate_expected_apr(test_scenario_params)
 
@@ -59,7 +60,7 @@ def run_cc_simulation(test_scenario_params: TestScenarioParameters):
         for cu, epochs in fp.slashed_epochs.items():
             print(f"- CU {cu}: Epochs {', '.join(map(str, epochs))}")
 
-    if dp.amount_of_cu_to_move_to_deal > 0:
+    if dp.amount_of_cu_to_move_to_deal > 0 and dp.deal_start_epoch > 0:
         print("\033[93m\nCC will participate in a Deal:\033[0m")
         print(f"- Deal Start Epoch: {dp.deal_start_epoch}")
         print(f"- Deal End Epoch: {dp.deal_end_epoch}")
@@ -98,8 +99,9 @@ def run_cc_simulation(test_scenario_params: TestScenarioParameters):
     print("\n" + "=" * 100)
     print("\033[93mSimulation Summary:\033[0m")
     print(f"Total CC Rewards Earned: {cc_rewards['total_earned']:.4f}")
-    print(f"CC Rewards Unlocked: {cc_rewards['unlocked']:.4f}")
     print(f"CC Rewards in Vesting: {cc_rewards['in_vesting']:.4f}")
+    print(f"CC Rewards Unlocked: {cc_rewards['to_claim']:.4f}")
+    print(f"CC Rewards Withdrawn: {cc_rewards['total_withdrawn']:.4f}")
     print(f"CC Provider Rewards: {cc_rewards['provider_rewards']:.4f}")
     print(f"CC Staker Rewards: {cc_rewards['staker_rewards']:.4f}")
 
@@ -129,9 +131,7 @@ if __name__ == "__main__":
     creation_params = CCCreationParameters(
         cu_amount=1, cc_start_epoch=5, cc_end_epoch=50, staking_rate=100
     )
-    failing_params = CCFailingParams(
-        cc_fail_epoch=0, slashed_epochs={1: [10, 11, 12, 13, 14, 15]}
-    )
+    failing_params = CCFailingParams(cc_fail_epoch=0, slashed_epochs={})
 
     deal_params = CCDealParameters(
         deal_start_epoch=0,  # 0 means no deal
@@ -147,6 +147,7 @@ if __name__ == "__main__":
         failing_params=failing_params,
         deal_params=deal_params,
         current_epoch=44,
+        withdrawal_epoch=15,
     )
 
     simulation_results = run_cc_simulation(test_scenario_params)

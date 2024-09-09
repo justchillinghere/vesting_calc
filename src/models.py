@@ -82,6 +82,7 @@ class TestScenarioParameters(BaseModel):
     deal_params: CCDealParameters = Field(default_factory=CCDealParameters)
     precision: int = Field(default=10**7, ge=0)
     current_epoch: int = Field(default=1, ge=1)
+    withdrawal_epoch: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def validate_all(cls, values):
@@ -118,5 +119,9 @@ class TestScenarioParameters(BaseModel):
                 < values.creation_params.cc_start_epoch
             ):
                 raise ValueError("cc_fail_epoch cannot be before cc_start_epoch")
+
+        if values.withdrawal_epoch:
+            if values.withdrawal_epoch > values.current_epoch:
+                raise ValueError("withdrawal_epoch cannot be after current_epoch")
 
         return values
