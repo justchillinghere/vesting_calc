@@ -4,7 +4,6 @@ from models import TestScenarioParameters
 from utils import (
     round_to_precision,
     group_consecutive_epochs,
-    find_first_withdrawal_epoch_for_the_period,
 )
 
 
@@ -25,7 +24,7 @@ def calculate_expected_apr(test_scenario_params: TestScenarioParameters):
     year_revenue_flt = target_rewards_flt_per_epoch * epochs_in_year * cp.cu_amount
 
     expected_apr = (year_revenue_flt * precision) // collateral_flt
-    provider_expected_apr = (expected_apr * (100 - cp.staking_rate)) // 100
+    # provider_expected_apr = (expected_apr * (100 - cp.staking_rate)) // 100
     staker_expected_apr = (expected_apr * cp.staking_rate) // 100
 
     print("=" * 80)
@@ -35,12 +34,15 @@ def calculate_expected_apr(test_scenario_params: TestScenarioParameters):
     print(f"Year revenue in FLT: {round_to_precision(year_revenue_flt, precision)}")
 
     print(f"Total expected APR: {round_to_precision(expected_apr)} %")
-    print(f"Provider Expected APR: {round_to_precision(provider_expected_apr)} %")
-    if cp.staking_rate > 0:
-        print(f"Staker Expected APR: {round_to_precision(staker_expected_apr)} %")
+    # print(f"Provider Expected APR: {round_to_precision(provider_expected_apr)} %")
+
+    print(f"Staker Expected APR: {round_to_precision(staker_expected_apr)} %")
     print("=" * 80)
 
-    return
+    return {
+        "expected_apr_total": round_to_precision(expected_apr),
+        "staker_expected_apr": round_to_precision(staker_expected_apr),
+    }
 
 
 def calculate_average_apr(
@@ -70,24 +72,27 @@ def calculate_average_apr(
     avg_reward = (total_reward * precision) // total_epochs_rewarded
     avg_reward_yearly = avg_reward * epochs_in_year
     avg_apr = (avg_reward_yearly * precision) // collateral_flt
-    provider_avg_apr = (avg_apr * (100 - cp.staking_rate)) // 100
+    # provider_avg_apr = (avg_apr * (100 - cp.staking_rate)) // 100
     staker_avg_apr = (avg_apr * cp.staking_rate) // 100
 
     print("=" * 80)
     print("\033[95m" + f"Average APR Calculation" + "\033[0m")
     print("=" * 80)
     print(f"Total Reward: {total_reward}")
-    print(f"Total epochs rewarded: {total_epochs_rewarded}")
+    print(f"Total epochs eligeble for rewards: {total_epochs_rewarded}")
     print(f"FLT Collateral: {round_to_precision(collateral_flt)}")
     print(f"Avg Reward per epoch: {round_to_precision(avg_reward)}")
     print(f"Avg Reward per year: {round_to_precision(avg_reward_yearly)}")
     print(f"Avg APR: {round_to_precision(avg_apr)} %")
-    print(f"Provider Avg APR: {round_to_precision(provider_avg_apr)} %")
-    if cp.staking_rate > 0:
-        print(f"Staker Avg APR: {round_to_precision(staker_avg_apr)} %")
+    # print(f"Provider Avg APR: {round_to_precision(provider_avg_apr)} %")
+
+    print(f"Staker Avg APR: {round_to_precision(staker_avg_apr)} %")
     print("=" * 80)
 
-    return
+    return {
+        "avg_apr_total": round_to_precision(avg_apr),
+        "staker_avg_apr": round_to_precision(staker_avg_apr),
+    }
 
 
 def calculate_period_rewards_for_cc(
@@ -111,7 +116,7 @@ def calculate_period_rewards_for_cc(
 
         # Check if it's a deal epoch
         if (dp.deal_start_epoch != 0 and dp.amount_of_cu_to_move_to_deal != 0) and (
-            dp.deal_start_epoch <= epoch <= dp.deal_end_epoch
+            dp.deal_start_epoch <= epoch < dp.deal_end_epoch
         ):
             active_cus -= dp.amount_of_cu_to_move_to_deal
             deal_epochs.add(epoch)
@@ -185,6 +190,7 @@ def calculate_vesting(test_scenario_params: TestScenarioParameters):
             "Rewards",
             "Unlocked %",
             "Unlocked Amount",
+            "Withdrawn Amount",
             "Slashed/Deal Info",
         )
     )
@@ -314,6 +320,8 @@ def calculate_deal_vesting(test_scenario_params: TestScenarioParameters):
     np = test_scenario_params.network_params
     dp = test_scenario_params.deal_params
     cp = test_scenario_params.creation_params
+    fp = test_scenario_params.failing_params
+    withdrawal_epoch = test_scenario_params.withdrawal_epoch
 
     precision = test_scenario_params.precision  # 10**7 by default
     reward_per_epoch_usd = int(dp.price_per_cu_in_offer_usd * precision)
@@ -326,9 +334,11 @@ def calculate_deal_vesting(test_scenario_params: TestScenarioParameters):
     last_epoch_to_count_rewards = min(
         dp.deal_end_epoch, test_scenario_params.current_epoch
     )
+    if fp.cc_fail_epoch > 0:
+        last_epoch_to_count_rewards = min(last_epoch_to_count_rewards, fp.cc_fail_epoch)
 
     total_epochs_rewarded = (
-        last_epoch_to_count_rewards - dp.deal_start_epoch + 1
+        last_epoch_to_count_rewards - dp.deal_start_epoch
     )  # Include the last epoch
 
     total_rewards_earned_usd = (
@@ -358,26 +368,25 @@ def calculate_deal_vesting(test_scenario_params: TestScenarioParameters):
     print("-" * 60)
 
     unlocked_rewards = 0
+    total_withdrawn = 0
     print("Vesting Periods Breakdown:")
     print(
-        "{:<15} {:<15} {:<15} {:<15} {:<15}".format(
+        "{:<15} {:<15} {:<15} {:<15} {:<15} {:<15}".format(
             "Epoch",
             "Rewards (USD)",
             "Rewards (FLT)",
             "Unlocked %",
             "Unlocked Amount (FLT)",
+            "Withdrawn Amount (FLT)",
         )
     )
-    print("-" * 75)
+    print("-" * 95)
 
     for work_epoch in range(dp.deal_start_epoch, last_epoch_to_count_rewards):
         period_rewards_usd = reward_per_epoch_usd * dp.amount_of_cu_to_move_to_deal
         period_rewards_flt = (
             period_rewards_usd * (cp.staking_rate * precision / 100) // flt_price
         )
-
-        # print(f"period_rewards_usd: {round_to_precision(period_rewards_usd)}")
-        # print(f"period_rewards_flt: {round_to_precision(period_rewards_flt)}")
 
         periods_since_end = max(0, test_scenario_params.current_epoch - work_epoch)
         unlocked_fraction = min(
@@ -388,22 +397,44 @@ def calculate_deal_vesting(test_scenario_params: TestScenarioParameters):
             ),
             precision,
         )
+
         period_unlocked_rewards = period_rewards_flt * unlocked_fraction // precision
-        unlocked_rewards += period_unlocked_rewards
+
+        period_withdrawn = 0
+        if withdrawal_epoch > 0 and withdrawal_epoch > work_epoch:
+            periods_since_end_withdraw = max(0, withdrawal_epoch - work_epoch)
+            unlocked_fraction_withdrawn = min(
+                (periods_since_end_withdraw * precision)
+                // (
+                    test_scenario_params.vesting_params.vesting_period_count
+                    * test_scenario_params.vesting_params.vesting_period_duration
+                ),
+                precision,
+            )
+            period_withdrawn = (
+                unlocked_fraction_withdrawn * period_rewards_flt
+            ) // precision
+
+        total_withdrawn += period_withdrawn
+        unlocked_rewards += period_unlocked_rewards - period_withdrawn
 
         print(
-            "{:<15} {:<15.2f} {:<15.4f} {:<15.2%} {:<15.4f}".format(
+            "{:<15} {:<15.2f} {:<15.4f} {:<15.2%} {:<15.4f} {:<15.4f}".format(
                 work_epoch,
                 round_to_precision(period_rewards_usd),
                 round_to_precision(period_rewards_flt),
                 round_to_precision(unlocked_fraction),
                 round_to_precision(period_unlocked_rewards),
+                round_to_precision(period_withdrawn),
             )
         )
 
-    rewards_in_vesting = max(0, total_rewards_earned_flt - unlocked_rewards)
+    rewards_in_vesting = max(
+        0, total_rewards_earned_flt - unlocked_rewards - total_withdrawn
+    )
+    available_for_withdrawal = unlocked_rewards
 
-    print("-" * 75)
+    print("-" * 90)
     print(
         "\033[95m"
         + f"Results for Deal Staker Rewards, epoch {test_scenario_params.current_epoch}"
@@ -411,16 +442,21 @@ def calculate_deal_vesting(test_scenario_params: TestScenarioParameters):
     )
 
     print(
-        f"Total Unlocked Deal Staker Rewards (FLT): {round_to_precision(unlocked_rewards, precision)}"
+        f"Total Rewards Earned (FLT): {round_to_precision(total_rewards_earned_flt, precision)}"
+    )
+    print(f"Total Withdrawn (FLT): {round_to_precision(total_withdrawn, precision)}")
+    print(
+        f"Available for Withdrawal (FLT): {round_to_precision(available_for_withdrawal, precision)}"
     )
     print(
-        f"Deal Staker Rewards Still in Vesting (FLT): {round_to_precision(rewards_in_vesting, precision)}"
+        f"Rewards Still in Vesting (FLT): {round_to_precision(rewards_in_vesting, precision)}"
     )
     print("=" * 60)
 
     return {
         "total_earned_usd": round_to_precision(total_rewards_earned_usd, precision),
         "total_earned_flt": round_to_precision(total_rewards_earned_flt, precision),
-        "unlocked_flt": round_to_precision(unlocked_rewards, precision),
-        "in_vesting_flt": round_to_precision(rewards_in_vesting, precision),
+        "total_withdrawn": round_to_precision(total_withdrawn, precision),
+        "to_claim": round_to_precision(available_for_withdrawal, precision),
+        "in_vesting": round_to_precision(rewards_in_vesting, precision),
     }

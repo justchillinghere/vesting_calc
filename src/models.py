@@ -9,6 +9,9 @@ class NetworkParameters(BaseModel):
     usd_target_revenue_per_epoch: float = Field(default=1000.0, gt=0)
     # min_cc_duration: int = Field(default=1, ge=1)  # in epochs
     flt_usd_price: float = Field(default=1.0, gt=0)  # in USD
+    min_reward_pool: float = Field(default=0.0, ge=0)  # in USD
+    max_reward_pool: float = Field(default=0.0, ge=0)  # in USD
+    max_fail_ratio: int = Field(default=4, ge=0)
 
 
 class VestingParameters(BaseModel):
@@ -108,6 +111,9 @@ class TestScenarioParameters(BaseModel):
                             f"CU {cu} cannot be slashed in epoch {epoch} while in a deal"
                         )
 
+        cls.fill_slashed_epochs(values)
+        cls.update_reward_pools(values.network_params, values.creation_params.cu_amount)
+
         if values.failing_params.cc_fail_epoch != 0:
             if (
                 values.failing_params.cc_fail_epoch
@@ -125,3 +131,66 @@ class TestScenarioParameters(BaseModel):
                 raise ValueError("withdrawal_epoch cannot be after current_epoch")
 
         return values
+
+    @classmethod
+    def fill_slashed_epochs(cls, values):
+        network_params = values.network_params
+        creation_params = values.creation_params
+        failing_params = values.failing_params
+
+        max_fail_amount = int(network_params.max_fail_ratio * creation_params.cu_amount)
+        cc_fail_epoch = failing_params.cc_fail_epoch
+        slashed_epochs = failing_params.slashed_epochs
+        total_cu_amount = creation_params.cu_amount
+
+        if cc_fail_epoch != 0 and not slashed_epochs:
+            cls._fill_slashed_epochs_for_failure(
+                cc_fail_epoch, max_fail_amount, total_cu_amount, slashed_epochs
+            )
+            failing_params.slashed_epochs = slashed_epochs
+
+        total_slashed = sum(len(epochs) for epochs in slashed_epochs.values())
+        cls._validate_slashed_epochs(cc_fail_epoch, total_slashed, max_fail_amount)
+
+    @classmethod
+    def _fill_slashed_epochs_for_failure(
+        cls, cc_fail_epoch, max_fail_amount, total_cu_amount, slashed_epochs
+    ):
+        epochs_to_slash = max_fail_amount // total_cu_amount
+        remaining_slashes = max_fail_amount % total_cu_amount
+
+        for cu in range(1, total_cu_amount + 1):
+            slashed_epochs[cu] = list(
+                range(cc_fail_epoch - epochs_to_slash + 1, cc_fail_epoch + 1)
+            )
+            if cu <= remaining_slashes:
+                slashed_epochs[cu].insert(0, cc_fail_epoch - epochs_to_slash)
+
+    @classmethod
+    def _validate_slashed_epochs(cls, cc_fail_epoch, total_slashed, max_fail_amount):
+        if cc_fail_epoch != 0:
+            if total_slashed < max_fail_amount:
+                raise ValueError(
+                    f"Total slashed epochs ({total_slashed}) must be at least {max_fail_amount} when cc_fail_epoch is set"
+                )
+        else:
+            if total_slashed > max_fail_amount:
+                raise ValueError(
+                    f"Total slashed epochs ({total_slashed}) is greater than max_fail_amount ({max_fail_amount}), but cc_fail_epoch is not set"
+                )
+
+    @classmethod
+    def update_reward_pools(cls, network_params: NetworkParameters, cu_amount: int):
+        if network_params.min_reward_pool == 0 and network_params.max_reward_pool == 0:
+            if network_params.flt_usd_price == 0 or cu_amount == 0:
+                raise ValueError(
+                    "FLT USD price and CU amount must be greater than zero"
+                )
+
+            reward_pool_value = (
+                network_params.usd_target_revenue_per_epoch
+                / network_params.flt_usd_price
+            ) * cu_amount
+
+            network_params.min_reward_pool = reward_pool_value
+            network_params.max_reward_pool = reward_pool_value

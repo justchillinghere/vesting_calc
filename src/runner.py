@@ -35,6 +35,9 @@ def run_cc_simulation(test_scenario_params: TestScenarioParameters):
     print(f"- USD Collateral per Unit: ${np.usd_collateral_per_unit}")
     print(f"- USD Target Revenue per Epoch: ${np.usd_target_revenue_per_epoch}")
     print(f"- FLT Price, USD: ${np.flt_usd_price}")
+    print(f"- Min Reward Pool: ${np.min_reward_pool}")
+    print(f"- Max Reward Pool: ${np.max_reward_pool}")
+    print(f"- Max Fail Ratio per CU: {np.max_fail_ratio}")
 
     print("\033[93mCC created with the following parameters:\033[0m")
     print(f"- Start Epoch: {cp.cc_start_epoch}")
@@ -48,9 +51,15 @@ def run_cc_simulation(test_scenario_params: TestScenarioParameters):
     print(
         f"- Vesting Period Duration: {test_scenario_params.vesting_params.vesting_period_duration}"
     )
-    print(f"Rewards will be withdrawn at epoch {test_scenario_params.withdrawal_epoch}")
 
-    calculate_expected_apr(test_scenario_params)
+    if test_scenario_params.withdrawal_epoch:
+        print(
+            "\033[93m"
+            + f"Rewards will be withdrawn at epoch {test_scenario_params.withdrawal_epoch}"
+            + "\033[0m"
+        )
+
+    expected_apr = calculate_expected_apr(test_scenario_params)
 
     if fp.cc_fail_epoch:
         print(f"\033[91m\nCC will fail in Epoch {fp.cc_fail_epoch}\033[0m")
@@ -73,27 +82,34 @@ def run_cc_simulation(test_scenario_params: TestScenarioParameters):
 
     # 3. Run Deal vesting rewards calculation
     print("\nCalculating Deal Vesting Rewards:")
-    if (
-        dp.amount_of_cu_to_move_to_deal > 0 and dp.deal_start_epoch > 0
-    ) and dp.deal_start_epoch >= min(
-        test_scenario_params.current_epoch,
-        test_scenario_params.failing_params.cc_fail_epoch,
+    last_active_epoch = (
+        min(
+            test_scenario_params.current_epoch,
+            test_scenario_params.failing_params.cc_fail_epoch,
+        )
+        if test_scenario_params.failing_params.cc_fail_epoch
+        else test_scenario_params.current_epoch
+    )
+    if (dp.amount_of_cu_to_move_to_deal > 0 and dp.deal_start_epoch > 0) and (
+        dp.deal_start_epoch <= last_active_epoch
     ):
         deal_rewards = calculate_deal_vesting(test_scenario_params)
     else:
+
         print(
             "\033[91mNo active Deal is set or Deal hasn't started yet. No Deal rewards to calculate.\033[0m"
         )
         deal_rewards = {
             "total_earned_usd": 0,
             "total_earned_flt": 0,
-            "unlocked_flt": 0,
+            "to_claim": 0,
             "in_vesting_flt": 0,
+            "total_withdrawn": 0,
         }
 
     total_earned_flt = cc_rewards["total_earned"] + deal_rewards["total_earned_flt"]
 
-    calculate_average_apr(total_earned_flt, test_scenario_params)
+    average_apr = calculate_average_apr(total_earned_flt, test_scenario_params)
 
     # 4. Print summary
     print("\n" + "=" * 100)
@@ -110,11 +126,17 @@ def run_cc_simulation(test_scenario_params: TestScenarioParameters):
     ) and dp.deal_start_epoch <= test_scenario_params.current_epoch:
         print(f"Deal Rewards Earned (USD): ${deal_rewards['total_earned_usd']:.4f}")
         print(f"Deal Rewards Earned (FLT): {deal_rewards['total_earned_flt']:.4f}")
-        print(f"Deal Rewards Unlocked (FLT): {deal_rewards['unlocked_flt']:.4f}")
-        print(f"Deal Rewards in Vesting (FLT): {deal_rewards['in_vesting_flt']:.4f}")
+        print(f"Deal Rewards in Vesting: {deal_rewards['in_vesting']:.4f}")
+        print(f"Deal Rewards Unlocked: {deal_rewards['to_claim']:.4f}")
+        print(f"Deal Rewards Withdrawn: {deal_rewards['total_withdrawn']:.4f}")
     print("=" * 100)
 
-    return {"cc_rewards": cc_rewards, "deal_rewards": deal_rewards}
+    return {
+        "cc_rewards": cc_rewards,
+        "deal_rewards": deal_rewards,
+        "expected_apr": expected_apr,
+        "average_apr": average_apr,
+    }
 
 
 if __name__ == "__main__":
@@ -123,6 +145,7 @@ if __name__ == "__main__":
         usd_collateral_per_unit=1,
         usd_target_revenue_per_epoch=1,
         flt_usd_price=1,
+        max_fail_ratio=4,
     )
     vesting_params = VestingParameters(
         vesting_period_count=5,
@@ -131,11 +154,11 @@ if __name__ == "__main__":
     creation_params = CCCreationParameters(
         cu_amount=1, cc_start_epoch=5, cc_end_epoch=50, staking_rate=100
     )
-    failing_params = CCFailingParams(cc_fail_epoch=0, slashed_epochs={})
+    failing_params = CCFailingParams(cc_fail_epoch=25, slashed_epochs={})
 
     deal_params = CCDealParameters(
         deal_start_epoch=0,  # 0 means no deal
-        deal_end_epoch=30,
+        deal_end_epoch=40,
         amount_of_cu_to_move_to_deal=1,
         price_per_cu_in_offer_usd=1,
     )
@@ -147,7 +170,7 @@ if __name__ == "__main__":
         failing_params=failing_params,
         deal_params=deal_params,
         current_epoch=44,
-        withdrawal_epoch=15,
+        withdrawal_epoch=0,
     )
 
     simulation_results = run_cc_simulation(test_scenario_params)
