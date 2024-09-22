@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 
-from models import TestScenarioParameters
+from models import TestScenarioParameters, NetworkParameters
 from utils import (
     round_to_precision,
     group_consecutive_epochs,

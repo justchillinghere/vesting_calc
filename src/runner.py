@@ -152,9 +152,9 @@ if __name__ == "__main__":
         vesting_period_duration=10,
     )
     creation_params = CCCreationParameters(
-        cu_amount=1, cc_start_epoch=5, cc_end_epoch=50, staking_rate=100
+        cu_amount=1, cc_start_epoch=5, cc_end_epoch=50, staking_rate=20
     )
-    failing_params = CCFailingParams(cc_fail_epoch=25, slashed_epochs={})
+    failing_params = CCFailingParams(cc_fail_epoch=0, slashed_epochs={})
 
     deal_params = CCDealParameters(
         deal_start_epoch=0,  # 0 means no deal
